@@ -20,6 +20,7 @@ from src.chunker import chunk_text, chunk_transcript_by_time
 from src.vector_store import build_vector_store, load_vector_store, similarity_search
 from src.summariser import summarise_transcript
 from src.transcriber import transcribe_from_url
+from src.vision import extract_visual_context
 
 load_dotenv()
 
@@ -35,6 +36,8 @@ def process_video(
     chunk_overlap: int = 200,
     summarise: bool = True,
     whisper_model: str = "base",
+    vision: bool = False,
+    vision_interval: int = 30,
 ) -> dict:
     """
     Full pipeline: extract → chunk → embed → (optionally) summarise.
@@ -74,6 +77,15 @@ def process_video(
     else:
         plain_text = extract_plain_text(transcript)
         print(f"    Words   : {len(plain_text.split())}")
+
+    # 2b. Optionally extract visual context from frames using Gemini Vision
+    if vision:
+        print(f"👁️   Extracting visual context (every {vision_interval}s)...")
+        visual_entries = extract_visual_context(url, interval_seconds=vision_interval)
+        if visual_entries:
+            visual_text = "\n".join(e["text"] for e in visual_entries)
+            plain_text = plain_text + "\n\n" + visual_text
+            print(f"    Added {len(visual_entries)} frame descriptions to context.")
 
     # 3. Chunk text
     print("✂️   Chunking text...")
@@ -221,6 +233,17 @@ def main():
         choices=["tiny", "base", "small", "medium"],
         help="Whisper model to use if no captions found (default: base)",
     )
+    process_parser.add_argument(
+        "--vision",
+        action="store_true",
+        help="Extract visual context from video frames using Gemini Vision",
+    )
+    process_parser.add_argument(
+        "--vision-interval",
+        type=int,
+        default=30,
+        help="Seconds between sampled frames for visual analysis (default: 30)",
+    )
 
     # --- query sub-command ---
     query_parser = subparsers.add_parser(
@@ -263,6 +286,8 @@ def main():
             chunk_overlap=args.chunk_overlap,
             summarise=not args.no_summary,
             whisper_model=args.whisper_model,
+            vision=args.vision,
+            vision_interval=args.vision_interval,
         )
     elif args.command == "query":
         query_videos(

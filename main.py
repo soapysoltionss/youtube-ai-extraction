@@ -19,6 +19,7 @@ from src.extractor import (
 from src.chunker import chunk_text, chunk_transcript_by_time
 from src.vector_store import build_vector_store, load_vector_store, similarity_search
 from src.summariser import summarise_transcript
+from src.transcriber import transcribe_from_url
 
 load_dotenv()
 
@@ -33,6 +34,7 @@ def process_video(
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
     summarise: bool = True,
+    whisper_model: str = "base",
 ) -> dict:
     """
     Full pipeline: extract → chunk → embed → (optionally) summarise.
@@ -44,6 +46,7 @@ def process_video(
         chunk_size: Characters per chunk.
         chunk_overlap: Overlapping characters between chunks.
         summarise: Whether to generate an LLM summary.
+        whisper_model: Whisper model size to use if no transcript is available.
 
     Returns:
         Dictionary with metadata, summary, and number of chunks stored.
@@ -57,12 +60,16 @@ def process_video(
     print(f"    Channel : {metadata['channel']}")
     print(f"    Duration: {metadata['duration']}s")
 
-    # 2. Extract transcript
+    # 2. Extract transcript — fall back to Whisper if no captions available
     print("📝  Fetching transcript...")
     video_id = extract_video_id(url) or metadata["video_id"]
     transcript = get_transcript(video_id)
     if not transcript:
-        print("⚠️  No transcript available. Falling back to description.")
+        print(f"⚠️  No captions found. Using Whisper ('{whisper_model}') to transcribe audio...")
+        transcript = transcribe_from_url(url, model_size=whisper_model)
+
+    if not transcript:
+        print("⚠️  Transcription failed. Falling back to video description.")
         plain_text = metadata.get("description", "")
     else:
         plain_text = extract_plain_text(transcript)
@@ -208,6 +215,12 @@ def main():
     process_parser.add_argument(
         "--no-summary", action="store_true", help="Skip LLM summarisation"
     )
+    process_parser.add_argument(
+        "--whisper-model",
+        default="base",
+        choices=["tiny", "base", "small", "medium"],
+        help="Whisper model to use if no captions found (default: base)",
+    )
 
     # --- query sub-command ---
     query_parser = subparsers.add_parser(
@@ -249,6 +262,7 @@ def main():
             chunk_size=args.chunk_size,
             chunk_overlap=args.chunk_overlap,
             summarise=not args.no_summary,
+            whisper_model=args.whisper_model,
         )
     elif args.command == "query":
         query_videos(

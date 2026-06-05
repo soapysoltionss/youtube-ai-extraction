@@ -1,14 +1,13 @@
 """
 YouTube video information extractor.
 Fetches transcript and metadata from YouTube videos.
+Falls back to Whisper audio transcription when no captions are available.
 """
 
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 import yt_dlp
 import re
-import ssl
-import certifi
 import requests
 from typing import Optional
 
